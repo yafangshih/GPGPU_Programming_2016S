@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include "SyncedMemory.h"
 
 #define CHECK {\
@@ -9,13 +10,19 @@
 		abort();\
 	}\
 }
+__device__ char mytoupper(char input){
+	if('a' <= input and input <= 'z'){ return input-('a'-'A');}
+	else{ return input;}
+}
 
 __global__ void SomeTransform(char *input_gpu, int fsize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx < fsize and input_gpu[idx] != '\n') {
-		input_gpu[idx] = '!';
+		input_gpu[idx] = mytoupper(input_gpu[idx]);
 	}
 }
+
+
 
 int main(int argc, char **argv)
 {
@@ -47,7 +54,7 @@ int main(int argc, char **argv)
 	// An example: transform the first 64 characters to '!'
 	// Don't transform over the tail
 	// And don't transform the line breaks
-	SomeTransform<<<2, 32>>>(input_gpu, fsize);
+	SomeTransform<<<(fsize/32)+1, 32>>>(input_gpu, fsize);
 
 	puts(text_smem.get_cpu_ro());
 	return 0;
