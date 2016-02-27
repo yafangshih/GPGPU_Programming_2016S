@@ -13,7 +13,7 @@
 
 
 
-__global__ void SomeTransform(char *input_gpu, int fsize) {
+__global__ void SwitchText(char *input_gpu, int fsize) {
 	//int blockRow = blockIdx.y;
     int blockCol = blockIdx.x;
 
@@ -26,7 +26,7 @@ __global__ void SomeTransform(char *input_gpu, int fsize) {
 	__shared__ char As[2];
 	As[col] = input_gpu[idx];
 
-	if (idx < fsize and As[0]!='\n' and As[1]!='\n') {
+	if (idx < fsize and As[0]!='\n' and As[1]!='\n' and As[0]!=' ' and As[1]!=' ') {
 		input_gpu[idx] = As[(col+1)%2];
 	}
 }
@@ -57,7 +57,7 @@ int main(int argc, char **argv){
 
 	char *input_gpu = text_smem.get_gpu_rw();
 
-	SomeTransform<<<(fsize/2)+1, 2>>>(input_gpu, fsize);
+	SwitchText<<<(fsize/2)+1, 2>>>(input_gpu, fsize);
 
 	puts(text_smem.get_cpu_ro());
 	return 0;
