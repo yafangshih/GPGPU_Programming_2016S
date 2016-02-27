@@ -30,7 +30,7 @@ __global__ void SwitchText(char *input_gpu, int fsize) {
    // int row = threadIdx.y;
     int col = threadIdx.x;
 
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 //	Matrix Asub = GetSubMatrix(A, blockRow, m);
 	__shared__ char As[2];
