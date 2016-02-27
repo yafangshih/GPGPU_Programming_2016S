@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
+#include <iostream>
 #include "SyncedMemory.h"
 
 #define CHECK {\
@@ -22,6 +23,23 @@ __global__ void ToCapital(char *input_gpu, int fsize) {
 	}
 }
 
+__global__ void SwitchText(char *input_gpu, int fsize) {
+	//int blockRow = blockIdx.y;
+    int blockCol = blockIdx.x;
+
+   // int row = threadIdx.y;
+    int col = threadIdx.x;
+
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;;
+
+//	Matrix Asub = GetSubMatrix(A, blockRow, m);
+	__shared__ char As[2];
+	As[col] = input_gpu[idx];
+
+	if (idx < fsize and As[0]!='\n' and As[1]!='\n' and As[0]!=' ' and As[1]!=' ') {
+		input_gpu[idx] = As[(col+1)%2];
+	}
+}
 
 
 int main(int argc, char **argv)
@@ -54,7 +72,20 @@ int main(int argc, char **argv)
 	// An example: transform the first 64 characters to '!'
 	// Don't transform over the tail
 	// And don't transform the line breaks
-	ToCapital<<<(fsize/32)+1, 32>>>(input_gpu, fsize);
+	printf("Two transformation function implemented:\n");
+	printf("0) convert all characters to capitals\n");
+	printf("1) switch all pairs of characters\n");
+	printf("type the number to choose the function to demo: ");
+	int op = 0;
+	scanf("%d", &op);
+
+	if(op){
+		SwitchText<<<(fsize/2)+1, 2>>>(input_gpu, fsize);
+	}
+	else{	
+		ToCapital<<<(fsize/32)+1, 32>>>(input_gpu, fsize);
+	}
+	
 
 	puts(text_smem.get_cpu_ro());
 	return 0;
