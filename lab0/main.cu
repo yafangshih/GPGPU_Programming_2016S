@@ -21,47 +21,47 @@
 }
 __global__ void ToCapital(char *input_gpu, int fsize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
 	if('a' <= input_gpu[idx] and input_gpu[idx] <= 'z'){ //transform lower cases only
 		input_gpu[idx] = input_gpu[idx] - ('a'-'A');
 	}
 	__syncthreads(); //sync before print
 
 }
-__device__ int CheckisText(char input){
+__device__ int CheckisText(char input){ // return 1 for english chars
 	if('a'<=input and input<='z'){ return 1; }
 	if('A'<=input and input<='Z'){ return 1; }
 	return 0;
 }
 
 __global__ void FindnonText(char *input_gpu, int *nontxtList_gpu, int fsize){
+	// find the idx of special characters
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if(CheckisText(input_gpu[idx])){ 
 		 nontxtList_gpu[idx]=fsize;
 	}
-	else{	
+	else{ // special chars
 		nontxtList_gpu[idx]=idx;
 	}
 	__syncthreads();
 }
 
 __global__ void SwitchText(char *temptext_gpu, int fsize) {
+	// swap each pairs
+
 	// int blockRow = blockIdx.y;
 	// int blockCol = blockIdx.x;
-
 	// int row = threadIdx.y;
     int col = threadIdx.x;
-
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	// printf("%c, block=%d, thread=%d, idx=%d\n", temptext_gpu[idx], blockCol, col, idx);
 
+	// store the pair to swap
 	__shared__ char As[2];
-	As[col] = temptext_gpu[idx];
+	// each thread move 1 data into shared memory
+	As[col] = temptext_gpu[idx]; 
 	__syncthreads();
-	if (CheckisText(As[0]) and CheckisText(As[1])) {
-		//printf("%c, %c\n", temptext_gpu[idx], As[(col+1)%2]);
-		temptext_gpu[idx] = As[(col+1)%2];
 
+	if (CheckisText(As[0]) and CheckisText(As[1])) {
+		temptext_gpu[idx] = As[(col+1)%2]; // swap
 	}
 	__syncthreads();
 }
@@ -106,40 +106,45 @@ int main(int argc, char **argv)
 	int op = 0;
 	scanf("%d", &op);
 
-	if(!op){ //op==0
-		//transform all characters to capitals
+	if(!op){ // op==0, convert all text to capitals
 		ToCapital<<<(fsize/32)+1, 32>>>(input_gpu, fsize);
 	}
-	else{ //op==1
+	else{ // op==1, swap all pairs of characters in all words
+
+		// find special characters (those aren't english)
+		// store their indexs (nontxtList)
+		// (parallel with GPU)
 		MemoryBuffer<int> nontxtList(fsize+1);
 		auto nontxtList_smem = nontxtList.CreateSync(fsize);
 		CHECK;
 		int *nontxtList_gpu = nontxtList_smem.get_gpu_rw();
-		//nontxtList, nontxtList_smem, nontxtList_gpu
-
 		FindnonText<<<(fsize/32)+1, 32>>>(input_gpu, nontxtList_gpu, fsize);
 
+		// sort the indexs in nontxtList
 		int *Lptr = (int*)nontxtList_smem.get_cpu_ro();
 		std::qsort(Lptr, fsize, sizeof(int), compare);	
 		Lptr = (int*)nontxtList_smem.get_cpu_ro();
 
+		// the chars between each two indexs (temptext)
+		// are those we want to swap
 		MemoryBuffer<char> temptext(fsize+1);
 		auto temptext_smem = temptext.CreateSync(fsize);
 		CHECK;
 		char *temptext_gpu = temptext_smem.get_gpu_rw();
-		//temptext, temptext_smem, temptext_gpu
-
+		
 		int len = *Lptr;
 		int *nextLptr;
-
 		char *inputptr = text_smem.get_cpu_wo();
 		
+		// input a word to SwitchText() each time
+		// SwitchText swap each pair with shared memory of size 2
 		while(*Lptr!=fsize){
 				strncpy(temptext_smem.get_cpu_wo(), inputptr, len);
 				temptext_smem.get_cpu_wo()[len] = '\0';
 				temptext_gpu = temptext_smem.get_gpu_rw();
 				SwitchText<<<(len/2)+1, 2>>>(temptext_gpu, len);
 
+				// copy the swaped word 
 				strncpy(inputptr, temptext_smem.get_cpu_ro(), len);
 				inputptr = inputptr+len+1;
 
