@@ -120,12 +120,12 @@ int main(int argc, char **argv)
 		int *nontxtList_gpu = nontxtList_smem.get_gpu_rw();
 		FindnonText<<<(fsize/32)+1, 32>>>(input_gpu, nontxtList_gpu, fsize);
 
-		// sort the indexs in nontxtList
+		// sort the indexs of special characters
 		int *Lptr = (int*)nontxtList_smem.get_cpu_ro();
 		std::qsort(Lptr, fsize, sizeof(int), compare);	
 		Lptr = (int*)nontxtList_smem.get_cpu_ro();
 
-		// the chars between each two indexs (temptext)
+		// the chars (word) between each two indexs (temptext)
 		// are those we want to swap
 		MemoryBuffer<char> temptext(fsize+1);
 		auto temptext_smem = temptext.CreateSync(fsize);
