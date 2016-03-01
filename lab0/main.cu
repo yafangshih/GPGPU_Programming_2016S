@@ -1,9 +1,15 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
+#include <iostream>
+#include <cstring>
 #include "SyncedMemory.h"
 
 /**
+*
+* nvcc --version: V7.0.27
 * compile: nvcc main.cu -std=c++11 
+*
 **/
 
 #define CHECK {\
@@ -13,12 +19,6 @@
 		abort();\
 	}\
 }
-/*
-__device__ char mytoupper(char input){
-	if('a' <= input and input <= 'z'){ return input-('a'-'A');}
-	else{ return input;}
-}*/
-
 __global__ void ToCapital(char *input_gpu, int fsize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -27,6 +27,48 @@ __global__ void ToCapital(char *input_gpu, int fsize) {
 	}
 	__syncthreads(); //sync before print
 
+}
+__device__ int CheckisText(char input){
+	if('a'<=input and input<='z'){ return 1; }
+	if('A'<=input and input<='Z'){ return 1; }
+	return 0;
+}
+
+__global__ void FindnonText(char *input_gpu, int *nontxtList_gpu, int fsize){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if(CheckisText(input_gpu[idx])){ 
+		 nontxtList_gpu[idx]=fsize;
+	}
+	else{	
+		nontxtList_gpu[idx]=idx;
+	}
+	__syncthreads();
+}
+
+__global__ void SwitchText(char *temptext_gpu, int fsize) {
+	// int blockRow = blockIdx.y;
+	// int blockCol = blockIdx.x;
+
+	// int row = threadIdx.y;
+    int col = threadIdx.x;
+
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	// printf("%c, block=%d, thread=%d, idx=%d\n", temptext_gpu[idx], blockCol, col, idx);
+
+	__shared__ char As[2];
+	As[col] = temptext_gpu[idx];
+	__syncthreads();
+	if (CheckisText(As[0]) and CheckisText(As[1])) {
+		//printf("%c, %c\n", temptext_gpu[idx], As[(col+1)%2]);
+		temptext_gpu[idx] = As[(col+1)%2];
+
+	}
+	__syncthreads();
+}
+
+int compare (const void * a, const void * b)
+{
+  return ( *(int*)a - *(int*)b );
 }
 
 int main(int argc, char **argv)
@@ -56,9 +98,56 @@ int main(int argc, char **argv)
 
 	// TODO: do your transform here
 	char *input_gpu = text_smem.get_gpu_rw();
-	//transform all characters to capitals
-	ToCapital<<<(fsize/32)+1, 32>>>(input_gpu, fsize);
 	
+	printf("Two transformation implemented:\n");
+	printf("0) convert all text to capitals\n");
+	printf("1) swap all pairs of characters in all words\n");
+	printf("Please enter the # of the transformation to demo: ");
+	int op = 0;
+	scanf("%d", &op);
+
+	if(!op){ //op==0
+		//transform all characters to capitals
+		ToCapital<<<(fsize/32)+1, 32>>>(input_gpu, fsize);
+	}
+	else{ //op==1
+		MemoryBuffer<int> nontxtList(fsize+1);
+		auto nontxtList_smem = nontxtList.CreateSync(fsize);
+		CHECK;
+		int *nontxtList_gpu = nontxtList_smem.get_gpu_rw();
+		//nontxtList, nontxtList_smem, nontxtList_gpu
+
+		FindnonText<<<(fsize/32)+1, 32>>>(input_gpu, nontxtList_gpu, fsize);
+
+		int *Lptr = (int*)nontxtList_smem.get_cpu_ro();
+		std::qsort(Lptr, fsize, sizeof(int), compare);	
+		Lptr = (int*)nontxtList_smem.get_cpu_ro();
+
+		MemoryBuffer<char> temptext(fsize+1);
+		auto temptext_smem = temptext.CreateSync(fsize);
+		CHECK;
+		char *temptext_gpu = temptext_smem.get_gpu_rw();
+		//temptext, temptext_smem, temptext_gpu
+
+		int len = *Lptr;
+		int *nextLptr;
+
+		char *inputptr = text_smem.get_cpu_wo();
+		
+		while(*Lptr!=fsize){
+				strncpy(temptext_smem.get_cpu_wo(), inputptr, len);
+				temptext_smem.get_cpu_wo()[len] = '\0';
+				temptext_gpu = temptext_smem.get_gpu_rw();
+				SwitchText<<<(len/2)+1, 2>>>(temptext_gpu, len);
+
+				strncpy(inputptr, temptext_smem.get_cpu_ro(), len);
+				inputptr = inputptr+len+1;
+
+				nextLptr = Lptr+1;
+				len = *nextLptr - *Lptr - 1;
+				Lptr++;
+		}
+	}
 	puts(text_smem.get_cpu_ro());
 	return 0;
 }
