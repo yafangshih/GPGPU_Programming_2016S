@@ -24,7 +24,7 @@ tuple<vector<char>, vector<int>, vector<int>> GenerateTestCase(Engine &eng, cons
 	bernoulli_distribution bd(0.1);
 	uniform_int_distribution<int> id1(1, 20);
 	uniform_int_distribution<int> id2(1, 5);
-	uniform_int_distribution<char> id3('a', 'z');
+	uniform_int_distribution<int> id3('a', 'z');
 	tuple<vector<char>, vector<int>, vector<int>> ret;
 	auto &text = get<0>(ret);
 	auto &pos = get<1>(ret);
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 {
 	// Initialize random text
 	default_random_engine engine(12345);
-	auto text_pos_head = GenerateTestCase(engine, 40000000); // 40 MB data
+	auto text_pos_head = GenerateTestCase(engine, 1);//40000000); // 40 MB data
 	vector<char> &text = get<0>(text_pos_head);
 	vector<int> &pos = get<1>(text_pos_head);
 	vector<int> &head = get<2>(text_pos_head);
@@ -88,6 +88,13 @@ int main(int argc, char **argv)
 	timer_count_position.Start();
 	int *pos_yours_gpu = pos_yours_sync.get_gpu_wo();
 	CountPosition(text_sync.get_gpu_ro(), pos_yours_gpu, n);
+	
+	//puts(text_sync.get_cpu_ro());
+	/*
+	for(int i=0;i<n; i++){
+		printf("%d ", pos_yours_sync.get_cpu_ro()[i]);
+	}*/
+	
 	timer_count_position.Pause();
 	CHECK;
 	printf_timer(timer_count_position);
