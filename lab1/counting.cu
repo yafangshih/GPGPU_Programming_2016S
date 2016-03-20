@@ -11,7 +11,7 @@
 
 /*
 nvcc -std=c++11 -arch=sm_30 -O2 -c counting.cu -o counting.o
-nvcc -std=c++11 -arch=sm_30 -O2 main.cu counting.o -o $(EXE)
+nvcc -std=c++11 -arch=sm_30 -O2 main.cu counting.o -o main
 */
 
 __device__ __host__ int CeilDiv(int a, int b) { return (a-1)/b + 1; }
@@ -57,16 +57,22 @@ __global__ void indexSum(int *indexList, int len, int donetxt){
 	}
 }
 
-__device__ int tree[9][10000];
+__device__ int tree[9][40000000];
+__device__ int lock[9];
 
-__global__ void indextreeSum(int *indexList, int text_size){
+__global__ void indextreeSum(int *indexList, int text_size, int nthread){
+
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 //	__device__ int tree[9][1000];
+	
 	tree[0][idx] = indexList[idx];
-
+	indexList[idx] = 0;
+	
 	int base = 0;
 	while(tree[base][idx] != 0 && idx - power2(base) >= 0){
 		tree[base+1][idx] = tree[base][idx] & tree[base][idx - power2(base)];
+//		atomicAdd(&lock[base], 1);
+//		while(lock[base] != text_size){}
 		base++;
 	}
 	int index = idx;
@@ -79,6 +85,33 @@ __global__ void indextreeSum(int *indexList, int text_size){
 			index = index - power2(base);
 		}
 	}
+
+/*
+
+__global__ void indextreeSum( int *indexList, int text_size){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	//printf("idx = %d ", idx);
+	
+	tree[(0 * text_size) + idx] = indexList[idx];
+	indexList[idx] = 0;
+
+	int base = 0;
+	while(tree[(base * text_size) + idx] != 0 and idx - power2(base) >= 0){
+		tree[((base+1) * text_size) + idx] = tree[(base * text_size) + idx] & tree[(base * text_size) + idx - power2(base)];
+		base++;
+	}
+
+	int index = idx;
+	while(base >= 0 and index >= 0){
+		if(tree[(base * text_size) + index] == 0){
+			base--;
+		}
+		else{
+			indexList[idx] += power2(base);
+			index = index - power2(base);
+		}
+	}
+	*/
 /*
 	base--;
 	while(base >= 0){
@@ -104,12 +137,12 @@ void CountPosition(const char *text, int *pos, int text_size)
 	*/
 
 	FindnonText<<<(text_size/32)+1, 32>>>(text, pos, text_size);
-/*	
-	int **device_data = NULL;  
-	size_t dsize = 9 * text_size * sizeof(float);  
-	cudaMalloc((void**)&device_data, dsize);  
-*/
-	indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size);
+	
+//	int* device_data = NULL;
+//	cudaMalloc((void**)&device_data, 9 * text_size * sizeof(int*));  
+
+//	printf("%d\n", (text_size/32)+1);	
+	indextreeSum<<<(text_size/32)+1, 32>>>( pos, text_size, (text_size/32)+1);
 
 
 /**	
