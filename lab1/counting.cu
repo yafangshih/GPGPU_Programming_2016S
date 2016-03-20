@@ -57,6 +57,43 @@ __global__ void indexSum(int *indexList, int len, int donetxt){
 	}
 }
 
+__device__ int tree[9][10000];
+
+__global__ void indextreeSum(int *indexList, int text_size){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//	__device__ int tree[9][1000];
+	tree[0][idx] = indexList[idx];
+
+	int base = 0;
+	while(tree[base][idx] != 0 && idx - power2(base) >= 0){
+		tree[base+1][idx] = tree[base][idx] & tree[base][idx - power2(base)];
+		base++;
+	}
+	int index = idx;
+	while(base >= 0 and index >= 0){
+		if(tree[base][index] == 0){
+			base--;
+		}
+		else{
+			indexList[idx] += power2(base);
+			index = index - power2(base);
+		}
+	}
+/*
+	base--;
+	while(base >= 0){
+		indexList[idx] += tree[base][idx - ]		
+	}
+
+	indexList[idx] = power2(base);
+	base--;
+	while(base >= 0){
+		indexList[idx] += power2(base) * (tree[base][idx - power2(base-1)] );	
+		base--;
+	}
+*/
+}
+
 void CountPosition(const char *text, int *pos, int text_size)
 {
 	/*
@@ -67,6 +104,15 @@ void CountPosition(const char *text, int *pos, int text_size)
 	*/
 
 	FindnonText<<<(text_size/32)+1, 32>>>(text, pos, text_size);
+/*	
+	int **device_data = NULL;  
+	size_t dsize = 9 * text_size * sizeof(float);  
+	cudaMalloc((void**)&device_data, dsize);  
+*/
+	indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size);
+
+
+/**	
 	int cpuList[text_size];
 	cudaMemcpy(cpuList, pos, text_size*sizeof(int), cudaMemcpyDeviceToHost);
 
@@ -84,6 +130,7 @@ void CountPosition(const char *text, int *pos, int text_size)
 		startptr = endptr;
 		donetxt = donetxt + len;
 	}
+*/
 /**
 	int count=0;
 	for(int i=0;i<text_size;i++){
