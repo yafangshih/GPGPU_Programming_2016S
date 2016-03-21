@@ -7,8 +7,6 @@
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 
-#include "SyncedMemory.h"
-
 /*
 nvcc -std=c++11 -arch=sm_30 -O2 -c counting.cu -o counting.o
 nvcc -std=c++11 -arch=sm_30 -O2 main.cu counting.o -o main
@@ -48,7 +46,7 @@ __device__ int power2(int pow){
 }
 
 
-/*
+
 __global__ void indextreeInit(int *indexList, int text_size){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	tree[0][idx] = indexList[idx];
@@ -56,16 +54,13 @@ __global__ void indextreeInit(int *indexList, int text_size){
 
 __global__ void indextreeSum(int *indexList, int text_size, int base){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	
-	//tree[0][idx] = indexList[idx];
-	//indexList[idx] = 0;
-	
+		
 	if(tree[base][idx] != 0 && idx - power2(base) >= 0){
 		tree[base+1][idx] = tree[base][idx] & tree[base][idx - power2(base)];
 	}
 }
-*/
-/*
+
+
 __global__ void treeDown(int *indexList, int base){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int index = idx;
@@ -80,9 +75,9 @@ __global__ void treeDown(int *indexList, int base){
 			index = index - power2(base);
 		}
 	}
-}*/
+}
 
-
+/*
 __global__ void indextreeSum(int *indexList, int text_size){
 
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -106,26 +101,22 @@ __global__ void indextreeSum(int *indexList, int text_size){
 		}
 	}
 }
-
+*/
 
 void CountPosition(const char *text, int *pos, int text_size)
 {
 
 	FindnonText<<<(text_size/32)+1, 32>>>(text, pos, text_size);
-	
 
-//	indextreeInit<<<(text_size/32)+1, 32>>>(pos, text_size);
-
-	indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size);
-	
-	/*
+	indextreeInit<<<(text_size/32)+1, 32>>>(pos, text_size);
+	//indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size);	
 	for(int i=0;i<10;i++){
 		indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size, i);
 	}
 	
 	treeDown<<<(text_size/32)+1, 32>>>(pos, 9);
 	cudaDeviceSynchronize();
-	*/
+	
 
 }
 
