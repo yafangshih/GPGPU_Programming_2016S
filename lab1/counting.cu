@@ -147,18 +147,6 @@ int ExtractHead(const int *pos, int *head, int text_size)
 	// TODO
 	cudaMemset((void*)buffer, 0, 2*text_size*sizeof(int));
 
-	// pos_d: {0, 1, 2, 0}, flag_d: {0, 0, 0, 0}
-/*	printf("buffer before:\n");
-	cudaMemcpy(cpumem, buffer, text_size*2*sizeof(int), cudaMemcpyDeviceToHost);
-	for(int i=0;i<2*text_size;i++){
-		printf("%d ", cpumem[i]);
-	}
-	printf("\n");
-
-	isnt_one opIsntOne;
-
-//	thrust::replace_copy_if(pos_d, pos_d + text_size, flag_d, opIsntOne, 0);
-*/  
 	// neg the numbers that != 1
 	thrust::negate<int> opNeg; 
 	thrust::transform_if(thrust::device, pos_d, pos_d + text_size, flag_d, opNeg, isnt_one());
@@ -174,7 +162,7 @@ int ExtractHead(const int *pos, int *head, int text_size)
 	thrust::sequence(thrust::device, flag_d + text_size, flag_d + 2*text_size);
 	thrust::replace_if(flag_d + text_size, flag_d + 2*text_size, flag_d, isnt_one(), -1);
 	
-	// copy yto head
+	// copy to head
 	thrust::remove_copy(flag_d + text_size, flag_d + 2*text_size, head_d, -1);
 
 	cudaFree(buffer);
