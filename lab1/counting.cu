@@ -7,6 +7,9 @@
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 
+#include <thrust/replace.h>
+#include <thrust/remove.h>
+#include <thrust/reduce.h>
 /*
 nvcc -std=c++11 -arch=sm_30 -O2 -c counting.cu -o counting.o
 nvcc -std=c++11 -arch=sm_30 -O2 main.cu counting.o -o main
@@ -78,7 +81,7 @@ __global__ void treeDown(int *indexList, int base){
 }
 
 /*
-__global__ void indextreeSum(int *indexList, int text_size){
+__global__ void indextreeSum_notSafe(int *indexList, int text_size){
 
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	
@@ -107,28 +110,72 @@ void CountPosition(const char *text, int *pos, int text_size)
 {
 
 	FindnonText<<<(text_size/32)+1, 32>>>(text, pos, text_size);
-
+	
 	indextreeInit<<<(text_size/32)+1, 32>>>(pos, text_size);
-	//indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size);	
+	
 	for(int i=0;i<10;i++){
 		indextreeSum<<<(text_size/32)+1, 32>>>(pos, text_size, i);
 	}
 	
 	treeDown<<<(text_size/32)+1, 32>>>(pos, 9);
 	cudaDeviceSynchronize();
-	
 
 }
+
+struct isnt_one
+{
+  __host__ __device__ bool operator()(int x){
+    
+    if(x!=1){
+    	return true;
+    }
+    else return false;
+}    
+};
 
 int ExtractHead(const int *pos, int *head, int text_size)
 {
 	int *buffer;
 	int nhead;
 	cudaMalloc(&buffer, sizeof(int)*text_size*2); // this is enough
+	
 	thrust::device_ptr<const int> pos_d(pos);
 	thrust::device_ptr<int> head_d(head), flag_d(buffer), cumsum_d(buffer+text_size);
 
+//	int cpumem[2*text_size];
+
 	// TODO
+	cudaMemset((void*)buffer, 0, 2*text_size*sizeof(int));
+
+	// pos_d: {0, 1, 2, 0}, flag_d: {0, 0, 0, 0}
+/*	printf("buffer before:\n");
+	cudaMemcpy(cpumem, buffer, text_size*2*sizeof(int), cudaMemcpyDeviceToHost);
+	for(int i=0;i<2*text_size;i++){
+		printf("%d ", cpumem[i]);
+	}
+	printf("\n");
+
+	isnt_one opIsntOne;
+
+//	thrust::replace_copy_if(pos_d, pos_d + text_size, flag_d, opIsntOne, 0);
+*/  
+	// neg the numbers that != 1
+	thrust::negate<int> opNeg; 
+	thrust::transform_if(thrust::device, pos_d, pos_d + text_size, flag_d, opNeg, isnt_one());
+
+	// build a filter
+	thrust::plus<int> opPlus;
+	thrust::transform(thrust::device, pos_d, pos_d + text_size, flag_d, flag_d, opPlus);
+
+	// reduce the filter to a number, which is the # of heads
+	nhead = thrust::reduce(flag_d, flag_d + text_size);
+	
+	// filter out the position of the 1s
+	thrust::sequence(thrust::device, flag_d + text_size, flag_d + 2*text_size);
+	thrust::replace_if(flag_d + text_size, flag_d + 2*text_size, flag_d, isnt_one(), -1);
+	
+	// copy yto head
+	thrust::remove_copy(flag_d + text_size, flag_d + 2*text_size, head_d, -1);
 
 	cudaFree(buffer);
 	return nhead;
