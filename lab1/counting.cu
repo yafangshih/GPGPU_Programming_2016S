@@ -10,6 +10,7 @@
 #include <thrust/replace.h>
 #include <thrust/remove.h>
 #include <thrust/reduce.h>
+
 /*
 nvcc -std=c++11 -arch=sm_30 -O2 -c counting.cu -o counting.o
 nvcc -std=c++11 -arch=sm_30 -O2 main.cu counting.o -o main
@@ -169,6 +170,32 @@ int ExtractHead(const int *pos, int *head, int text_size)
 	return nhead;
 }
 
+//
+__global__ void charcmp(const char *text, int *countbuf, char y){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if(text[idx] == y){
+		countbuf[idx] = 1;
+	}
+	else{
+		countbuf[idx] = 0;
+	}
+}
+
 void Part3(char *text, int *pos, int *head, int text_size, int n_head)
 {
+	printf("Characters count:\n");
+	int *cnt;
+	cudaMalloc(&cnt, sizeof(int)*text_size);
+	thrust::device_ptr<int> countbuf_d(cnt);
+	int count = 0;
+
+	for(int i='A', j=1; i<='z'; i++, j++){
+		charcmp<<<(text_size/32)+1, 32>>>(text, cnt, i);
+		count = thrust::reduce(countbuf_d, countbuf_d + text_size);
+		printf("%c:%d ", i, count);
+		if(i == 'Z'){i += 'a'-'Z'-1;}
+		if(j % 13 == 0){ printf("\n");}
+	}	
+
+
 }
