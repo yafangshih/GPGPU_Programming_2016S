@@ -21,10 +21,10 @@ __device__ __host__ int CeilAlign(int a, int b) { return CeilDiv(a, b) * b; }
 
 __device__ int tree[10][50000000];
 
-__device__ int CheckisText(char input){ // return 1 for english chars
-	if('a'<=input and input<='z'){ return 1; }
-	if('A'<=input and input<='Z'){ return 1; }
-	return 0;
+__device__ bool CheckisText(char input){ // return 1 for english chars
+	if('a'<=input and input<='z'){ return true; }
+	if('A'<=input and input<='Z'){ return true; }
+	return false;
 }
 
 __global__ void FindnonText(const char *input_gpu, int *nontxtList_gpu, int fsize){
@@ -181,21 +181,86 @@ __global__ void charcmp(const char *text, int *countbuf, char y){
 	}
 }
 
+
+__global__ void SwitchText(char *text, char *textswap, int start) {
+	// swap the char with the neighbor in the block
+
+	int idx = start + blockIdx.x * blockDim.x + threadIdx.x;
+	__shared__ char nbor[2];
+	
+	// a thread is responsible for loading 1 char 
+	nbor[threadIdx.x] = text[idx];
+	__syncthreads();
+	
+	if (CheckisText(nbor[0]) and CheckisText(nbor[1])) {
+		// swap with the char loaded by neighbor
+		textswap[idx] = nbor[(threadIdx.x+1)%2];
+	}
+	else{
+		textswap[idx] = nbor[threadIdx.x];	
+	}
+}
+
 void Part3(char *text, int *pos, int *head, int text_size, int n_head)
 {
+	/*
+	Feature 1:
+		count the occurence of each eng char
+	*/
 	printf("Characters count:\n");
+	
 	int *cnt;
 	cudaMalloc(&cnt, sizeof(int)*text_size);
 	thrust::device_ptr<int> countbuf_d(cnt);
 	int count = 0;
 
 	for(int i='A', j=1; i<='z'; i++, j++){
+		// fills 1 where the eng char appears
 		charcmp<<<(text_size/32)+1, 32>>>(text, cnt, i);
+
+		// reduce to a number, which is the # of occurence
 		count = thrust::reduce(countbuf_d, countbuf_d + text_size);
 		printf("%c:%d ", i, count);
 		if(i == 'Z'){i += 'a'-'Z'-1;}
 		if(j % 13 == 0){ printf("\n");}
 	}	
 	cudaFree(cnt);
+	
+	/*
+	Feature 2:
+		swap every pair of 2 english characters in a word
+		the text after swap is stored back to *text (and will not be printed)
+	*/
+	if(n_head > 0){
+		char *textswap;
+		cudaMalloc(&textswap, sizeof(char)*text_size);
+
+		int start = 0, end = text_size;
+		int nhead = n_head;	
+
+		// get the text between every 2 heads
+		cudaMemcpy(&start, head, sizeof(int), cudaMemcpyDeviceToHost);
+		
+		while(nhead > 1){
+			head++;
+			cudaMemcpy(&end, head, sizeof(int), cudaMemcpyDeviceToHost);
+			// swap the text
+			SwitchText<<<((end - start)/2)+1, 2>>>(text, textswap, start);
+			// find the next interval
+			start = end;
+			nhead--;
+		}
+		// swap the last interval
+		end = text_size;
+		SwitchText<<<((end - start)/2)+1, 2>>>(text, textswap, start);
+
+		cudaMemcpy(text, textswap, sizeof(char)*text_size, cudaMemcpyDeviceToDevice);
+
+		cudaFree(textswap);
+	}
+	else{ // # of word == 0
+		printf("No need for swap.\n");
+	}
+	
 
 }
