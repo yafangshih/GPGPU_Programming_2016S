@@ -196,6 +196,6 @@ void Part3(char *text, int *pos, int *head, int text_size, int n_head)
 		if(i == 'Z'){i += 'a'-'Z'-1;}
 		if(j % 13 == 0){ printf("\n");}
 	}	
-
+	cudaFree(cnt);
 
 }
