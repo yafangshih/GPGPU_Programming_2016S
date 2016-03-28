@@ -207,7 +207,7 @@ void Part3(char *text, int *pos, int *head, int text_size, int n_head)
 	Feature 1:
 		count the occurence of each eng char
 	*/
-	printf("Characters count:\n");
+//	printf("Characters count:\n");
 	
 	int *cnt;
 	cudaMalloc(&cnt, sizeof(int)*text_size);
@@ -220,9 +220,11 @@ void Part3(char *text, int *pos, int *head, int text_size, int n_head)
 
 		// reduce to a number, which is the # of occurence
 		count = thrust::reduce(countbuf_d, countbuf_d + text_size);
-		printf("%c:%d ", i, count);
+
+//		uncomment this line to print the result on the screen
+//		printf("%c:%d ", i, count);
+//		if(j % 13 == 0){printf("\n");}
 		if(i == 'Z'){i += 'a'-'Z'-1;}
-		if(j % 13 == 0){ printf("\n");}
 	}	
 	cudaFree(cnt);
 	
@@ -259,7 +261,7 @@ void Part3(char *text, int *pos, int *head, int text_size, int n_head)
 		cudaFree(textswap);
 	}
 	else{ // # of word == 0
-		printf("No need for swap.\n");
+	//	printf("No need for swap.\n");
 	}
 	
 
