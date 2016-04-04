@@ -13,9 +13,9 @@ static const int ANGLE = 1;
 static const int octs = 5;
 
 static const double freq = (double)1/(double)32;
-static const double Ybound = 225.301;
-static const double U = 105.247;
-static const double V = 149.173;
+static const double R = 6;
+static const double G = 169;
+static const double B = 214;
 
 #define PI 3.14159265
 #define E 2.71828182
@@ -37,8 +37,6 @@ static const double V = 149.173;
 		251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107, 
 		49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254, 
 		138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180 };
-
-
 
 __device__ double power(double x, int y){
 	double ans = 1;
@@ -65,7 +63,11 @@ __device__ double surflet(double x, double y, int perX, int perY, int c, int f){
 }
 
 __device__ double perlin(double x, double y, int perX, int perY, int f){
-	return (surflet(x, y, perX, perY, 0, f) + surflet(x, y, perX, perY, 1, f) + surflet(x, y, perX, perY, 2, f) + surflet(x, y, perX, perY, 3, f));
+	double ans = 0;
+	for(int i=0;i<4;i++){ //4 corners
+		ans += surflet(x, y, perX, perY, i, f);
+	}
+	return ans;
 }
 
 
@@ -81,18 +83,16 @@ __global__ void fBm(int f, uint8_t *intimgptr, double Yb){
 		ans += power(0.5, i) * perlin(x*power(2, i), y*power(2, i), perX*power(2, i), perY*power(2, i), f);
 	}
 	
-	img[yint][xint] = ans;
-	img[yint][xint] = ((255.0 - (255.0+Yb)/2))*img[yint][xint] + ((255.0+Yb)/2);
+	img[yint][xint] = ans; // between 0-1
+	img[yint][xint] = ((255.0 - (255.0+Yb)/2))*img[yint][xint] + ((255.0+Yb)/2); // between Ybound-255
 
 	intimgptr[yint*W + xint] = (uint8_t)img[yint][xint];
-	__syncthreads();
 }
 
 __global__ void initdirs(){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	dirs[idx][0] = cos((idx * 2.0 * PI)/256.0);
 	dirs[idx][1] = sin((idx * 2.0 * PI)/256.0);
-
 }
 
 struct Lab2VideoGenerator::Impl {
@@ -116,22 +116,28 @@ void Lab2VideoGenerator::get_info(Lab2VideoInfo &info) {
 };
 
 void Lab2VideoGenerator::Generate(uint8_t *yuv) {
+
+
+	double Y =  0.299*R +   0.587 *G +   0.114 *B;
+	double U = -0.169*R + (-0.331)*G +   0.500 *B + 128;
+	double V =  0.500*R + (-0.419)*G + (-0.081)*B + 128;
 	
 	uint8_t *intimgptr;
 	cudaMalloc((void **) &intimgptr, H*W*sizeof(uint8_t));
 
-	fBm<<<((H*W)/32)+1, 32>>>((impl->f), intimgptr, Ybound);
+	fBm<<<((H*W)/32)+1, 32>>>((impl->f), intimgptr, Y);
 	cudaDeviceSynchronize();
 
 	uint8_t *hostimg = (uint8_t *)malloc(H*W*sizeof(uint8_t));
 	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(uint8_t), cudaMemcpyDeviceToHost);
-//	cv::imwrite("uint8Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
+//	cv::imwrite("Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
 
 	cudaMemcpy(yuv, hostimg, H*W, cudaMemcpyHostToDevice); // Y
 
 //	cudaMemset(yuv, 255/NFRAME, W*H);
 	cudaMemset(yuv+W*H, (uint8_t)U, W*H/4); // U
 	cudaMemset(yuv+(W*H)+(W*H/4), (uint8_t)V, W*H/4); // V
+
 	//	if((impl->t % 10 == 0)){ ++(impl->f); }
 	++(impl->t);
 	++(impl->f);
