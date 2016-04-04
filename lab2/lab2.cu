@@ -9,10 +9,13 @@
 static const unsigned W = 640;
 static const unsigned H = 480;
 static const unsigned NFRAME = 240;
-static const int ANGLE = 5;
+static const int ANGLE = 1;
 static const int octs = 5;
 
 static const double freq = (double)1/(double)32;
+static const double Ybound = 225.301;
+static const double U = 105.247;
+static const double V = 149.173;
 
 #define PI 3.14159265
 #define E 2.71828182
@@ -66,7 +69,7 @@ __device__ double perlin(double x, double y, int perX, int perY, int f){
 }
 
 
-__global__ void fBm(int f, uint8_t *intimgptr){
+__global__ void fBm(int f, uint8_t *intimgptr, double Yb){
 
 	int perX = (int)((double)W*freq), perY = (int)((double)H*freq);
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -79,7 +82,7 @@ __global__ void fBm(int f, uint8_t *intimgptr){
 	}
 	
 	img[yint][xint] = ans;
-	img[yint][xint] = (255.0/2)*img[yint][xint] + (255.0/2);
+	img[yint][xint] = ((255.0 - (255.0+Yb)/2))*img[yint][xint] + ((255.0+Yb)/2);
 
 	intimgptr[yint*W + xint] = (uint8_t)img[yint][xint];
 	__syncthreads();
@@ -117,41 +120,20 @@ void Lab2VideoGenerator::Generate(uint8_t *yuv) {
 	uint8_t *intimgptr;
 	cudaMalloc((void **) &intimgptr, H*W*sizeof(uint8_t));
 
-//	double perX = (double)W*freq, perY = (double)H*freq;
-
-	fBm<<<((H*W)/32)+1, 32>>>((impl->f), intimgptr);
+	fBm<<<((H*W)/32)+1, 32>>>((impl->f), intimgptr, Ybound);
 	cudaDeviceSynchronize();
-
-//	unsigned *hostimg = (unsigned *)malloc(H*W*sizeof(unsigned));
-//	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(unsigned), cudaMemcpyDeviceToHost);
-//	cv::imwrite("cudaResult5o.png", cv::Mat(H, W, CV_32SC1, hostimg));
 
 	uint8_t *hostimg = (uint8_t *)malloc(H*W*sizeof(uint8_t));
 	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(uint8_t), cudaMemcpyDeviceToHost);
-	cv::imwrite("uint8Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
+//	cv::imwrite("uint8Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
 
-
-	
-//	int *hostimg = (int *)malloc(H*W*sizeof(int));
-/*	for(int i=0;i<H; i++){
-		for(int j=0; j<W; j++){
-			printf("%d ", hostimg[i*H+j]);
-		}
-	}
-	*/
-//	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(int), cudaMemcpyDeviceToHost);
-/*
-	for(int i=0;i<H; i++){
-		for(int j=0; j<W; j++){
-			if(hostimg[i*H+j] <0 || hostimg[i*H+j]>255) printf("%d ", hostimg[i*H+j]);
-		}
-	}
-*/
-	cudaMemcpy(yuv, hostimg, H*W, cudaMemcpyHostToDevice);
+	cudaMemcpy(yuv, hostimg, H*W, cudaMemcpyHostToDevice); // Y
 
 //	cudaMemset(yuv, 255/NFRAME, W*H);
-	cudaMemset(yuv+W*H, 128, W*H/2);
-	if((impl->t % 10 == 0)){ ++(impl->f); }
+	cudaMemset(yuv+W*H, (uint8_t)U, W*H/4); // U
+	cudaMemset(yuv+(W*H)+(W*H/4), (uint8_t)V, W*H/4); // V
+	//	if((impl->t % 10 == 0)){ ++(impl->f); }
 	++(impl->t);
+	++(impl->f);
 	
 }
