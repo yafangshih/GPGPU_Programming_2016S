@@ -6,29 +6,31 @@
 
 #include <opencv2/opencv.hpp>
 
-static const unsigned W = 640;
-static const unsigned H = 480;
-static const unsigned NFRAME = 240;
+/*frame settings*/
+static const unsigned W = 800;
+static const unsigned H = 450;
+static const unsigned NFRAME = 960;
 static const int ANGLE = 1;
 static const int octs = 5;
 
-static const double freq = (double)1/(double)64;
+static const double freq = (double)1/(double)96;
 
-static const double R0 = 0;
-static const double G0 = 172;
-static const double B0 = 230;
-
-static const double R1 = 230;
-static const double G1 = 230;
-static const double B1 = 230;
+// two colors to interpolate
+static const double Y0 = 119;
+static const double U0 = 95;
+static const double V0 = 225;
+static const double Y1 = 239;
+static const double U1 = 117;
+static const double V1 = 139;
 
 #define PI 3.14159265
 #define E 2.71828182
 
 
  __device__ double dirs[256][2]; 
-// __device__ double img[H][W];
 
+// taken from Ken Perlin 
+// http://mrl.nyu.edu/~perlin/noise/
  __device__ int perm[256] = { 151,160,137,91,90,15, 
 		131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23, 
 		190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33, 
@@ -53,8 +55,10 @@ __device__ double dblAbs(double x){
 	if(x < 0){ return -x; }
 	return x;
 }
+// much idea taken from http://gamedev.stackexchange.com/questions/23625/how-do-you-generate-tileable-perlin-noise
 
-__device__ double surflet(double x, double y, int perX, int perY, int c, int f){
+// find the weights of 4 corners
+__device__ double Corners4(double x, double y, int perX, int perY, int c, int f){
 	
 	int gridX = (int)x + c%2, gridY = (int)y + c/2;
 	int hashed = perm[ (perm[ (gridX%perX)%256 ] + gridY%perY)%256];
@@ -70,13 +74,12 @@ __device__ double surflet(double x, double y, int perX, int perY, int c, int f){
 __device__ double perlin(double x, double y, int perX, int perY, int f){
 	double ans = 0;
 	for(int i=0;i<4;i++){ //4 corners
-		ans += surflet(x, y, perX, perY, i, f);
+		ans += Corners4(x, y, perX, perY, i, f);
 	}
 	return ans;
 }
 
-
-__global__ void fBm(int f, double *douimgptr){
+__global__ void pixelRate(int f, double *douimgptr){
 
 	int perX = (int)((double)W*freq), perY = (int)((double)H*freq);
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -88,10 +91,11 @@ __global__ void fBm(int f, double *douimgptr){
 		ans += power(0.5, i) * perlin(x*power(2, i), y*power(2, i), perX*power(2, i), perY*power(2, i), f);
 	}
 	
-//	img[yint][xint] = ans; // between 0-1
+//	img[yint][xint] = ans; // between -1~1
 //	img[yint][xint] = ((255.0 - (255.0+Yb)/2))*img[yint][xint] + ((255.0+Yb)/2); // between Ybound-255
 //	intimgptr[yint*W + xint] = (uint8_t)img[yint][xint];
-	douimgptr[yint*W + xint] = ans;
+
+	douimgptr[yint*W + xint] = (1/2.0)*ans + (1/2.0); //0-1
 }
 
 __global__ void initdirs(){
@@ -99,13 +103,7 @@ __global__ void initdirs(){
 	dirs[idx][0] = cos((idx * 2.0 * PI)/256.0);
 	dirs[idx][1] = sin((idx * 2.0 * PI)/256.0);
 }
-/*
-__global__ void linearInter1(double *douimgptr, double C0, double C1, uint8_t *intimgptr, int r){
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-	intimgptr[idx] = (uint8_t)(C0 + (C1-C0) * douimgptr[idx]);
-}
-*/
+// interpolate two colors
 __global__ void linearInter(double *douimgptr, double C0, double C1, uint8_t *intimgptr, int r){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int xint = idx%W, yint = idx/W;
@@ -115,7 +113,16 @@ __global__ void linearInter(double *douimgptr, double C0, double C1, uint8_t *in
 		intimgptr[th] = (uint8_t)(C0 + (C1-C0) * douimgptr[idx]);
 	}
 }
+// paint N colors, the color painted is decided by the rate between 0-1
+__global__ void NColor(double *douimgptr, double *colorListGPU, uint8_t *intimgptr, int r, int cstart, int cN){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	int xint = idx%W, yint = idx/W;
 
+	if(yint%r == 0 and xint%r == 0){
+		int th = (yint/r)*(W/r) + (xint/r);
+		intimgptr[th] = (uint8_t) (colorListGPU[ cstart*cN + (int)(floor(douimgptr[idx] * cN)) ]);
+	}
+}
 
 struct Lab2VideoGenerator::Impl {
 	int t = 1;
@@ -132,54 +139,64 @@ void Lab2VideoGenerator::get_info(Lab2VideoInfo &info) {
 	info.w = W;
 	info.h = H;
 	info.n_frame = NFRAME;
-	// fps = 24/1 = 24
-	info.fps_n = 24;
+	info.fps_n = 96;
 	info.fps_d = 1;
 };
 
 void Lab2VideoGenerator::Generate(uint8_t *yuv) {
 
-	double Y0 =  0.299*R0 +   0.587 *G0 +   0.114 *B0;
-	double U0 = -0.169*R0 + (-0.331)*G0 +   0.500 *B0 + 128;
-	double V0 =  0.500*R0 + (-0.419)*G0 + (-0.081)*B0 + 128;
-
-	double Y1 =  0.299*R1 +   0.587 *G1 +   0.114 *B1;
-	double U1 = -0.169*R1 + (-0.331)*G1 +   0.500 *B1 + 128;
-	double V1 =  0.500*R1 + (-0.419)*G1 + (-0.081)*B1 + 128;
-	
 	double *douimgptr;
 	cudaMalloc((void **) &douimgptr, H*W*sizeof(double));
 
-	fBm<<<((H*W)/32)+1, 32>>>((impl->f), douimgptr);
+	pixelRate<<<((H*W)/32)+1, 32>>>((impl->f), douimgptr);
 	cudaDeviceSynchronize();
-
-
+/*
+	// Ncolor version
+	int cN = 10;
+	double *colorList = (double *)malloc(3*cN*sizeof(double));
+	for(int i=0; i<3*cN; i+=3){
+		double R = rand()%256;
+		double G = rand()%256;
+		double B = rand()%256;
+		colorList[i]   =  0.299*R +   0.587 *G +   0.114 *B;
+		colorList[i+1] = -0.169*R + (-0.331)*G +   0.500 *B + 128;
+		colorList[i+2] =  0.500*R + (-0.419)*G + (-0.081)*B + 128;
+	}
+	double *colorListGPU;
+	cudaMalloc((void **) &colorListGPU, 3*cN*sizeof(double));
+	cudaMemcpy(colorListGPU, colorList, 3*cN*sizeof(double), cudaMemcpyHostToDevice);
+*/
 	uint8_t *intimgptr;
 	cudaMalloc((void **) &intimgptr, H*W*sizeof(uint8_t));
 
-//	uint8_t *hostimg = (uint8_t *)malloc(H*W*sizeof(uint8_t));
-//	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(uint8_t), cudaMemcpyDeviceToHost);
-//	cv::imwrite("Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
+/*	
+	// save as an image
+	uint8_t *hostimg = (uint8_t *)malloc(H*W*sizeof(uint8_t));
+	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	cv::imwrite("Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
+*/
+/* 
+	1) Ncolor: paint with cN random colors (should uncomment sections about Ncolor)
+	2) linearInter: linear interpolate between two colors
+	
+*/
 
-//	cudaMemcpy(yuv, hostimg, H*W, cudaMemcpyHostToDevice); // Y
-
+//	NColor<<<((H*W)/32)+1, 32>>>(douimgptr, colorListGPU, intimgptr, 1, 0, cN);
 	linearInter<<<((H*W)/32)+1, 32>>>(douimgptr, Y0, Y1, intimgptr, 1);
-	cudaMemcpy(yuv, intimgptr, H*W, cudaMemcpyDeviceToDevice); // Y
+	cudaMemcpy(yuv, intimgptr, H*W, cudaMemcpyDeviceToDevice); 
 	cudaDeviceSynchronize();
 
+//	NColor<<<((H*W)/32)+1, 32>>>(douimgptr, colorListGPU, intimgptr, 2, 1, cN);
 	linearInter<<<((H*W)/32)+1, 32>>>(douimgptr, U0, U1, intimgptr, 2);
 	cudaMemcpy(yuv+(H*W), intimgptr, H*W/4, cudaMemcpyDeviceToDevice);
 	cudaDeviceSynchronize();
 
+//	NColor<<<((H*W)/32)+1, 32>>>(douimgptr, colorListGPU, intimgptr, 2, 2, cN);
 	linearInter<<<((H*W)/32)+1, 32>>>(douimgptr, V0, V1, intimgptr, 2);
 	cudaMemcpy(yuv+(H*W)+(H*W)/4, intimgptr, H*W/4, cudaMemcpyDeviceToDevice);
 	cudaDeviceSynchronize();
 
-//	cudaMemset(yuv, 255/NFRAME, W*H);
-//	cudaMemset(yuv+W*H, (uint8_t)U, W*H/4); // U
-//	cudaMemset(yuv+(W*H)+(W*H/4), (uint8_t)V, W*H/4); // V
-
-	//	if((impl->t % 10 == 0)){ ++(impl->f); }
+//	if((impl->t % 24 == 0)){ ++(impl->f); }
 	++(impl->t);
 	++(impl->f);
 	
