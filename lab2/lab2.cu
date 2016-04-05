@@ -12,17 +12,22 @@ static const unsigned NFRAME = 240;
 static const int ANGLE = 1;
 static const int octs = 5;
 
-static const double freq = (double)1/(double)32;
-static const double R = 6;
-static const double G = 169;
-static const double B = 214;
+static const double freq = (double)1/(double)64;
+
+static const double R0 = 0;
+static const double G0 = 172;
+static const double B0 = 230;
+
+static const double R1 = 230;
+static const double G1 = 230;
+static const double B1 = 230;
 
 #define PI 3.14159265
 #define E 2.71828182
 
 
  __device__ double dirs[256][2]; 
- __device__ double img[H][W];
+// __device__ double img[H][W];
 
  __device__ int perm[256] = { 151,160,137,91,90,15, 
 		131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23, 
@@ -71,7 +76,7 @@ __device__ double perlin(double x, double y, int perX, int perY, int f){
 }
 
 
-__global__ void fBm(int f, uint8_t *intimgptr, double Yb){
+__global__ void fBm(int f, double *douimgptr){
 
 	int perX = (int)((double)W*freq), perY = (int)((double)H*freq);
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -83,10 +88,10 @@ __global__ void fBm(int f, uint8_t *intimgptr, double Yb){
 		ans += power(0.5, i) * perlin(x*power(2, i), y*power(2, i), perX*power(2, i), perY*power(2, i), f);
 	}
 	
-	img[yint][xint] = ans; // between 0-1
-	img[yint][xint] = ((255.0 - (255.0+Yb)/2))*img[yint][xint] + ((255.0+Yb)/2); // between Ybound-255
-
-	intimgptr[yint*W + xint] = (uint8_t)img[yint][xint];
+//	img[yint][xint] = ans; // between 0-1
+//	img[yint][xint] = ((255.0 - (255.0+Yb)/2))*img[yint][xint] + ((255.0+Yb)/2); // between Ybound-255
+//	intimgptr[yint*W + xint] = (uint8_t)img[yint][xint];
+	douimgptr[yint*W + xint] = ans;
 }
 
 __global__ void initdirs(){
@@ -94,6 +99,23 @@ __global__ void initdirs(){
 	dirs[idx][0] = cos((idx * 2.0 * PI)/256.0);
 	dirs[idx][1] = sin((idx * 2.0 * PI)/256.0);
 }
+/*
+__global__ void linearInter1(double *douimgptr, double C0, double C1, uint8_t *intimgptr, int r){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+	intimgptr[idx] = (uint8_t)(C0 + (C1-C0) * douimgptr[idx]);
+}
+*/
+__global__ void linearInter(double *douimgptr, double C0, double C1, uint8_t *intimgptr, int r){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	int xint = idx%W, yint = idx/W;
+
+	if(yint%r == 0 and xint%r == 0){
+		int th = (yint/r)*(W/r) + (xint/r);
+		intimgptr[th] = (uint8_t)(C0 + (C1-C0) * douimgptr[idx]);
+	}
+}
+
 
 struct Lab2VideoGenerator::Impl {
 	int t = 1;
@@ -117,26 +139,45 @@ void Lab2VideoGenerator::get_info(Lab2VideoInfo &info) {
 
 void Lab2VideoGenerator::Generate(uint8_t *yuv) {
 
+	double Y0 =  0.299*R0 +   0.587 *G0 +   0.114 *B0;
+	double U0 = -0.169*R0 + (-0.331)*G0 +   0.500 *B0 + 128;
+	double V0 =  0.500*R0 + (-0.419)*G0 + (-0.081)*B0 + 128;
 
-	double Y =  0.299*R +   0.587 *G +   0.114 *B;
-	double U = -0.169*R + (-0.331)*G +   0.500 *B + 128;
-	double V =  0.500*R + (-0.419)*G + (-0.081)*B + 128;
+	double Y1 =  0.299*R1 +   0.587 *G1 +   0.114 *B1;
+	double U1 = -0.169*R1 + (-0.331)*G1 +   0.500 *B1 + 128;
+	double V1 =  0.500*R1 + (-0.419)*G1 + (-0.081)*B1 + 128;
 	
+	double *douimgptr;
+	cudaMalloc((void **) &douimgptr, H*W*sizeof(double));
+
+	fBm<<<((H*W)/32)+1, 32>>>((impl->f), douimgptr);
+	cudaDeviceSynchronize();
+
+
 	uint8_t *intimgptr;
 	cudaMalloc((void **) &intimgptr, H*W*sizeof(uint8_t));
 
-	fBm<<<((H*W)/32)+1, 32>>>((impl->f), intimgptr, Y);
-	cudaDeviceSynchronize();
-
-	uint8_t *hostimg = (uint8_t *)malloc(H*W*sizeof(uint8_t));
-	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(uint8_t), cudaMemcpyDeviceToHost);
+//	uint8_t *hostimg = (uint8_t *)malloc(H*W*sizeof(uint8_t));
+//	cudaMemcpy(hostimg, intimgptr, H*W*sizeof(uint8_t), cudaMemcpyDeviceToHost);
 //	cv::imwrite("Result.png", cv::Mat(H, W, CV_8UC1, hostimg));
 
-	cudaMemcpy(yuv, hostimg, H*W, cudaMemcpyHostToDevice); // Y
+//	cudaMemcpy(yuv, hostimg, H*W, cudaMemcpyHostToDevice); // Y
+
+	linearInter<<<((H*W)/32)+1, 32>>>(douimgptr, Y0, Y1, intimgptr, 1);
+	cudaMemcpy(yuv, intimgptr, H*W, cudaMemcpyDeviceToDevice); // Y
+	cudaDeviceSynchronize();
+
+	linearInter<<<((H*W)/32)+1, 32>>>(douimgptr, U0, U1, intimgptr, 2);
+	cudaMemcpy(yuv+(H*W), intimgptr, H*W/4, cudaMemcpyDeviceToDevice);
+	cudaDeviceSynchronize();
+
+	linearInter<<<((H*W)/32)+1, 32>>>(douimgptr, V0, V1, intimgptr, 2);
+	cudaMemcpy(yuv+(H*W)+(H*W)/4, intimgptr, H*W/4, cudaMemcpyDeviceToDevice);
+	cudaDeviceSynchronize();
 
 //	cudaMemset(yuv, 255/NFRAME, W*H);
-	cudaMemset(yuv+W*H, (uint8_t)U, W*H/4); // U
-	cudaMemset(yuv+(W*H)+(W*H/4), (uint8_t)V, W*H/4); // V
+//	cudaMemset(yuv+W*H, (uint8_t)U, W*H/4); // U
+//	cudaMemset(yuv+(W*H)+(W*H/4), (uint8_t)V, W*H/4); // V
 
 	//	if((impl->t % 10 == 0)){ ++(impl->f); }
 	++(impl->t);
