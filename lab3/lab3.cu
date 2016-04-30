@@ -1,9 +1,10 @@
 #include "lab3.h"
 #include <cstdio>
-#include <thrust/transform.h>
-#include <thrust/functional.h>
-#include <thrust/device_ptr.h>
+#include <iostream>
+
+#include <thrust/device_vector.h>
 #include <thrust/reduce.h>
+#include <thrust/execution_policy.h>
 
 __device__ __host__ int CeilDiv(int a, int b) { return (a-1)/b + 1; }
 __device__ __host__ int CeilAlign(int a, int b) { return CeilDiv(a, b) * b; }
@@ -31,7 +32,7 @@ __global__ void SimpleClone(
 	}
 }
 
-__global__ void computeAb(const float* mask, const float* background, const float* target, float* A, float* b, float* x, const int ht, const int wt, const int oy, const int ox, const int wb, const int c, int *f){
+__global__ void initialAxb(const float* mask, const float* background, const float* target, float* A, float* b, float* x, const int ht, const int wt, const int oy, const int ox, const int wb, const int c, int *f){
 
 	const int yt = blockIdx.y * blockDim.y + threadIdx.y;
 	const int xt = blockIdx.x * blockDim.x + threadIdx.x;
@@ -110,15 +111,25 @@ __global__ void jacobiRow(float* x, float* tmpx, const float* A, const float* b,
 	}
 }
 
+__device__ float myabs(float x){
+	if(x < 0){ return -x; }
+	return x;
+}
+
 __global__ void copy2x(float* x, float* tmpx, float *A, float *b, const float * mask, int ht, int wt, int * f){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//	prnt[idx] = idx;
+
+	float tmp = 0;
 
 	if(idx < ht*wt){
 		if(mask[idx] > 127){
 		//x[idx] = b[idx] - tmpx[idx];
-			x[idx] = (b[idx] - tmpx[idx])/A[idx*5];
-			if(b[idx] - (x[idx]*A[idx*5] + tmpx[idx]) < 50){f[idx] = 0;}
+			tmp = (b[idx] - tmpx[idx])/A[idx*5];
+			if(myabs(x[idx] - tmp) < 0.000001){f[idx] = 0;}
+			x[idx] = tmp;
+		}
+		else{
+			f[idx] = 0;
 		}
 	}
 }
@@ -144,6 +155,11 @@ int checkdone(int* fcpu, int ht, int wt){
 	return 0;
 }
 
+__global__ void set2one(int* ptr, int sz){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if(idx < sz){ptr[idx] = 1;}
+}
+
 void PoissonImageCloning(
 	const float *background,
 	const float *target,
@@ -156,30 +172,18 @@ void PoissonImageCloning(
 	cudaMemcpy(output, background, wb*hb*sizeof(float)*3, cudaMemcpyDeviceToDevice);
 
 
-	int *f;
-	cudaMalloc((void **) &f, wt*ht*sizeof(int));
-	cudaMemset((void*)f, 0, wt*ht*sizeof(int));
-	int *fcpu = (int *)malloc(wt*ht*sizeof(int));
-
-	thrust::device_ptr<int> flag_d(f);
-
-
-	float *tmpx;
-	cudaMalloc((void **) &tmpx, wt*ht*sizeof(float));
-	cudaMemset((void*)tmpx, 0, wt*ht*sizeof(float));
-
 
 
 	float *A;
 	cudaMalloc((void **) &A, 5*(wt*ht)*sizeof(float));
-	cudaMemset((void*)A, 0, 5*(wt*ht)*sizeof(float));
-
 	float *b;
 	cudaMalloc((void **) &b, wt*ht*sizeof(float));
 	float *x;
 	cudaMalloc((void **) &x, wt*ht*sizeof(float));
-
-	int notyet = 0;
+	float *tmpx;
+	cudaMalloc((void **) &tmpx, wt*ht*sizeof(float));
+    int *f;
+	cudaMalloc((void **) &f, wt*ht*sizeof(int));	
 
 
 	for(int c=0; c<3; c++){
@@ -187,27 +191,26 @@ void PoissonImageCloning(
 		cudaMemset((void*)b, 0, wt*ht*sizeof(float));
 		cudaMemset((void*)x, 0, wt*ht*sizeof(float));
 		cudaMemset((void*)tmpx, 0, wt*ht*sizeof(float));
-		cudaMemset((void*)f, 1, wt*ht*sizeof(int));
-		memset((void*)fcpu, 0,  wt*ht*sizeof(int));
+		set2one<<<((ht*wt)/32)+1, 32>>>(f, wt*ht);
 
-		notyet = thrust::reduce(flag_d, flag_d + wt*ht);
-		printf("%d %d\n", c, notyet);
+		int notyet = wt*ht;
 
-		computeAb<<<dim3(CeilDiv(wt,32), CeilDiv(ht,16)), dim3(32,16)>>>(mask, background, target, A, b, x, ht, wt, oy, ox, wb, c, f);
+		initialAxb<<<dim3(CeilDiv(wt,32), CeilDiv(ht,16)), dim3(32,16)>>>(mask, background, target, A, b, x, ht, wt, oy, ox, wb, c, f);
 	
-	//	int iter =0;
-	//	while(checkdone(fcpu, ht, wt)){
-		for(int i=0;i<80000;i++){
+//		int iter =0;
+		while(notyet != 0){
 			jacobiRow<<<((ht*wt)/32)+1, 32>>>(x, tmpx, A, b, ht, wt);
 			copy2x<<<((ht*wt)/32)+1, 32>>>(x, tmpx, A, b, mask, ht, wt, f);
 
-//			notyet = thrust::reduce(flag_d, flag_d + wt*ht);
-//			printf("%d %d\n", c, notyet);
-//			cudaMemcpy(fcpu, f, wt*ht*sizeof(int), cudaMemcpyDeviceToHost);
-		}
+			thrust::device_vector<int> flag_d(f, f + wt*ht);
+			notyet = thrust::reduce(thrust::device, flag_d.begin(), flag_d.end());
 
+//			iter++;
+		}
+//		printf("%d %d\n", c, iter);
 		paste<<<dim3(CeilDiv(wt,32), CeilDiv(ht,16)), dim3(32,16)>>>(output, x, background, wt, ht, oy, ox, wb, hb, c);
 		
 	}
+	
 
 }
