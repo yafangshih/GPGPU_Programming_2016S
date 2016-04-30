@@ -6,7 +6,7 @@
 #include <thrust/reduce.h>
 #include <thrust/execution_policy.h>
 
-#define PRECISION 0.0001
+#define PRECISION 0.00005
 
 __device__ __host__ int CeilDiv(int a, int b) { return (a-1)/b + 1; }
 __device__ __host__ int CeilAlign(int a, int b) { return CeilDiv(a, b) * b; }
