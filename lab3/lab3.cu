@@ -189,16 +189,16 @@ void PoissonImageCloning(
 
 		initialAxb<<<dim3(CeilDiv(wt,32), CeilDiv(ht,16)), dim3(32,16)>>>(mask, background, target, A, b, x, ht, wt, oy, ox, wb, hb, c, f);
 	
-		int iter =0;
+//		int iter =0;
 		while(notyet != 0){
 			jacobiRow<<<((ht*wt)/32)+1, 32>>>(x, tmpx, A, background, b, ht, wt, hb, wb, oy, ox, c);
 			copy2x<<<((ht*wt)/32)+1, 32>>>(x, tmpx, A, b, mask, ht, wt, f);
 
 			thrust::device_vector<int> flag_d(f, f + wt*ht);
 			notyet = thrust::reduce(thrust::device, flag_d.begin(), flag_d.end());
-			iter++;
+//			iter++;
 		}
-		printf("%d %d\n", c, iter);
+//		printf("%d %d\n", c, iter);
 		paste<<<dim3(CeilDiv(wt,32), CeilDiv(ht,16)), dim3(32,16)>>>(output, x, background, wt, ht, oy, ox, wb, hb, c);
 	}
 	
