@@ -1,4 +1,3 @@
-### Description <br />
 This program supports two types of operation on text: <br />
 * Count the Position in Words
 * Find the Heads
