@@ -3,7 +3,7 @@
 #include <cctype>
 #include <iostream>
 #include <cstring>
-#include "SyncedMemory.h"
+#include "utils/SyncedMemory.h"
 
 /**
 *

@@ -5,8 +5,8 @@
 #include <cstdlib>
 #include <functional>
 #include <algorithm>
-#include "SyncedMemory.h"
-#include "Timer.h"
+#include "../utils/SyncedMemory.h"
+#include "../utils/Timer.h"
 #include "counting.h"
 using namespace std;
 
