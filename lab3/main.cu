@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <algorithm>
-#include "SyncedMemory.h"
+#include "../utils/SyncedMemory.h"
 #include "pgm.h"
 #include "lab3.h"
 using namespace std;
