@@ -25,7 +25,7 @@ gpu qq a hello sonoda (input)
 ```
 ## lab2 <br />
 ### Perlin Noise <br />
-![alt text](https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab2/result.png) <br />
+<img src="https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab2/result.png" width="480"> <br />
 
 ## lab3 <br />
 ### Poisson Image Editing <br />
