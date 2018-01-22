@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
-#include "SyncedMemory.h"
+#include "../utils/SyncedMemory.h"
 #include "lab2.h"
 using namespace std;
 
