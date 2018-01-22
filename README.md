@@ -24,10 +24,13 @@ gpu qq a hello sonoda (input)
 0,4,8,10,18 (output) 
 ```
 ## lab2 <br />
-Perlin Noise <br />
+### Perlin Noise <br />
 ![alt text](https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab2/result.png) <br />
 
 ## lab3 <br />
-Poisson Image Editing <br />
+### Poisson Image Editing <br />
 
+| background | Target | Mask | Result |
+| :----: | :----: | :----: | :----: |
+| ![alt text](https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab3/img_for_readme/img_background.png) | ![alt text](https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab3/img_for_readme/img_target.png) | ![alt text](https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab3/img_for_readme/img_mask.png) | ![alt text](https://github.com/yafangshih/GPGPU_Programming_2016S/blob/master/lab3/img_for_readme/output.png) |
 
