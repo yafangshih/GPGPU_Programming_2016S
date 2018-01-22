@@ -1,10 +1,13 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>       /* cos */
+#include <iostream>
+#include <cstdlib>
+#include <cmath>       /* cos */
 #include <opencv2/opencv.hpp>
 
 #define PI 3.14159265
 #define E 2.71828182
+
+using namespace std;
+using namespace cv;
 
 static const unsigned W = 640;
 static const unsigned H = 480;
@@ -13,9 +16,9 @@ static const int ANGLE = 10;
 
 static const int octs = 5;
 
-const double freq = (double)1/(double)32;
-
-double img[H][W];
+//const double freq = (double)1/(double)32;
+const double gridW = 128;
+const double gridH = 128;
 
 int perm[] = { 151,160,137,91,90,15, 
 		131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23, 
@@ -33,26 +36,15 @@ int perm[] = { 151,160,137,91,90,15,
 
 double dirs[256][2];
 
-double power(double x, int y){
-	double ans = 1;
-	for(int i=0; i<y; i++){ ans = ans * x; }
-	return ans;
-}
-
-double dblAbs(double x){
-	if(x < 0){ return -x; }
-	return x;
-}
-
 double surflet(double x, double y, int perX, int perY, int c, int f){
 	
 	int gridX = (int)x + c%2, gridY = (int)y + c/2;
 	int hashed = perm[ (perm[ (gridX%perX)%256 ] + gridY%perY)%256];
 	double grad = (x-gridX) * dirs[(hashed + ANGLE*f) % 256][0] + (y-gridY) * dirs[(hashed + ANGLE*f) % 256][1];
 
-	double distX = dblAbs((double)x-gridX), distY = dblAbs((double)y-gridY);	
-	double polyX = 1 - 6*power(distX, 5) + 15*power(distX, 4) - 10*power(distX, 3);
-	double polyY = 1 - 6*power(distY, 5) + 15*power(distY, 4) - 10*power(distY, 3);
+	double distX = abs((double)x-gridX), distY = abs((double)y-gridY);	
+	double polyX = 1 - 6*pow(distX, 5) + 15*pow(distX, 4) - 10*pow(distX, 3);
+	double polyY = 1 - 6*pow(distY, 5) + 15*pow(distY, 4) - 10*pow(distY, 3);
 
 	return polyX * polyY * grad;
 }
@@ -66,34 +58,31 @@ double fBm(double x, double y, int perX, int perY, int f){
 	double ans = 0;
 
 	for(int i=0;i<octs;i++){
-		ans += power(0.5, i) * perlin(x*power(2, i), y*power(2, i), perX*power(2, i), perY*power(2, i), f);
+		ans += pow(0.5, i) * perlin(x*pow(2, i), y*pow(2, i), perX*pow(2, i), perY*pow(2, i), f);
 	}
 	return ans;
 }
 
 int main(){
-	// init dirs
+
+	Mat image(H, W, CV_64FC1);
+
 	for(int i=0; i<256; i++){
-		dirs[i][0] = cos((i * 2.0 * PI)/256);
-		dirs[i][1] = sin((i * 2.0 * PI)/256);
+		dirs[i][0] = cos((i * 2. * PI)/255);
+		dirs[i][1] = sin((i * 2. * PI)/255);
 	}
 	
-	double perX = (double)W*freq, perY = (double)H*freq;
-	std::string fprefix("frame");
+	double perX = W / gridW, perY = H / gridH;
 		
 	for(int f=0; f<NFRAME; f++){
 		for(int y=0; y<H; y++){
 			for(int x=0; x<W; x++){
-				img[y][x] = fBm(x*freq, y*freq, (int)perX, (int)perY, f);
-//				img[y][x] = 255.0 / (1 + power(E, (int)(-1.0*img[y][x])));
-				img[y][x] = (255.0/2)*img[y][x] + (255.0/2);
+				double tmp = fBm(x / gridW, y / gridH, perX, perY, f);
+				tmp = (255.0/2) * tmp + (255.0/2);
+				image.at<double>(y, x) = tmp;
 			}
 		}
-		char idx[5];
-		sprintf(idx, "%d", f);
-		std::string fname("");
-		fname = fname + fprefix + idx + ".png";
-		cv::imwrite(fname, cv::Mat(H, W, CV_64FC1, img));
+		cv::imwrite("test.png", image);
 	}
 	return 0;
 
