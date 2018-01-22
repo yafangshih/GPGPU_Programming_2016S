@@ -5,13 +5,13 @@ This program supports two types of operation on text: <br />
 ### Example <br />
 **Count the Position in Words** <br />
 ```
-gpu qq a hello sonoda (input) 
+gpu qq  a hello   sonoda (input) 
 123012001012345000123456 (output) 
 ```
 
 **Find the Heads** <br />
 ```
-gpu qq a hello sonoda (input) 
+gpu qq  a hello   sonoda (input) 
 123012001012345000123456 (output from above) 
 0,4,8,10,18 (output) 
 ```

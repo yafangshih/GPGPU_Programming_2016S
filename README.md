@@ -14,12 +14,12 @@ oLerm piusm odolr ist mate, ocsnceetutr dapisiicgn leti. uQ (output)
 ## lab1 <br />
 **Count the Position in Words** <br />
 ```
-gpu qq a hello sonoda (input) 
+gpu qq  a hello   sonoda (input) 
 123012001012345000123456 (output) 
 ```
 **Find the Heads** <br />
 ```
-gpu qq a hello sonoda (input) 
+gpu qq  a hello   sonoda (input) 
 123012001012345000123456 (output from above) 
 0,4,8,10,18 (output) 
 ```
